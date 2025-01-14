@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -17,12 +18,13 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Scanner;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.Vector;
+import java.util.Scanner;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final String TAG = "MainActivity";
     private static final String ESP32_DEVICE_NAME = "ESP32test";
     private static final UUID ESP32_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
@@ -34,7 +36,8 @@ public class MainActivity extends AppCompatActivity {
     private Button btnConnect, btnSave, btnDisplay, btnReset;
     private TextView tvT1, tvT2, tvT3, tvVoltage, tvCurrent, tvFileContents;
 
-    private final ConcurrentLinkedQueue<String> recentResults = new ConcurrentLinkedQueue<>();
+    private final Vector<String> recentResults = new Vector<>();
+    private boolean isSaved = false; // Flaga do kontrolowania możliwości zapisu
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -78,11 +81,9 @@ public class MainActivity extends AppCompatActivity {
         configureTachometer(tachometer3, 40);
         configureTachometer(tachometer4, 5);
         configureTachometer(tachometer5, 2);
-        tachometer1.setUnit("");
-        tachometer2.setUnit("");
-        tachometer3.setUnit("");
-        tachometer4.setUnit("");
-        tachometer5.setUnit("");
+
+        // Usunięcie jednostek z tachometrów
+        removeUnitsFromTachometers();
     }
 
     /**
@@ -94,6 +95,17 @@ public class MainActivity extends AppCompatActivity {
     private void configureTachometer(TubeSpeedometer tachometer, int maxSpeed) {
         tachometer.setWithTremble(false);
         tachometer.setMaxSpeed(maxSpeed);
+    }
+
+    /**
+     * Usuwa wyświetlanie jednostki z wszystkich tachometrów
+     */
+    private void removeUnitsFromTachometers() {
+        tachometer1.setUnit("");
+        tachometer2.setUnit("");
+        tachometer3.setUnit("");
+        tachometer4.setUnit("");
+        tachometer5.setUnit("");
     }
 
     /**
@@ -124,7 +136,7 @@ public class MainActivity extends AppCompatActivity {
             showToast("Połączono z ESP32");
             new Thread(this::listenForData).start();
         } catch (IOException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Błąd podczas łączenia z ESP32", e);
             showToast("Błąd podczas łączenia");
         }
     }
@@ -153,86 +165,70 @@ public class MainActivity extends AppCompatActivity {
         while (true) {
             try {
                 if (inputStream == null) break;
+
                 bytes = inputStream.read(buffer);
                 final String receivedMessage = new String(buffer, 0, bytes).trim();
+                Log.d(TAG, "Otrzymano wiadomość: " + receivedMessage);
 
-                if (isValidMessage(receivedMessage)) {
-                    processReceivedMessage(receivedMessage);
+                if (receivedMessage.startsWith("(") && receivedMessage.endsWith(")")) {
+                    String trimmedMessage = receivedMessage.substring(1, receivedMessage.length() - 1);
+                    String[] values = trimmedMessage.split(",");
+
+                    if (values.length == 5) {
+                        try {
+                            float T1 = Float.parseFloat(values[0]);
+                            float T2 = Float.parseFloat(values[1]);
+                            float T3 = Float.parseFloat(values[2]);
+                            float Voltage = Float.parseFloat(values[3]);
+                            float Current = Float.parseFloat(values[4]);
+
+                            addResultToVector(T1, T2, T3, Voltage, Current);
+
+                            runOnUiThread(() -> {
+                                tachometer1.speedTo(T1); // Przekazywanie wartości do tachografu
+                                tachometer2.speedTo(T2);
+                                tachometer3.speedTo(T3);
+                                tachometer4.speedTo(Voltage);
+                                tachometer5.speedTo(Current);
+
+                                tvT1.setText(String.format("T1: %.2f°C", T1));
+                                tvT2.setText(String.format("T2: %.2f°C", T2));
+                                tvT3.setText(String.format("T3: %.2f°C", T3));
+                                tvVoltage.setText(String.format("Voltage: %.2f V", Voltage));
+                                tvCurrent.setText(String.format("Current: %.2f A", Current));
+
+                                // Reset the save flag since new data has arrived
+                                isSaved = false;
+                                btnSave.setEnabled(true);
+                            });
+                        } catch (NumberFormatException e) {
+                            Log.e(TAG, "Błąd parsowania danych", e);
+                        }
+                    } else {
+                        Log.w(TAG, "Nieprawidłowa liczba wartości w wiadomości");
+                    }
                 }
 
             } catch (IOException e) {
-                e.printStackTrace();
-                runOnUiThread(() -> showToast("Połączenie utracone"));
+                Log.e(TAG, "Błąd podczas odczytu danych", e);
+                runOnUiThread(() -> Toast.makeText(this, "Connection lost", Toast.LENGTH_SHORT).show());
                 break;
             }
         }
     }
 
     /**
-     * Sprawdza, czy wiadomość ma prawidłowy format
-     *
-     * @param message Wiadomość do sprawdzenia
-     * @return True jeśli prawidłowa, false w przeciwnym razie
+     * Dodaje wynik do wektora, utrzymując maksymalnie 5 najnowszych wyników
      */
-    private boolean isValidMessage(String message) {
-        return message.startsWith("(") && message.endsWith(")") && message.length() > 2;
-    }
-
-    /**
-     * Przetwarza otrzymaną wiadomość
-     *
-     * @param message Wiadomość do przetworzenia
-     */
-    private void processReceivedMessage(String message) {
-        String trimmedMessage = message.substring(1, message.length() - 1);
-        String[] values = trimmedMessage.split(",");
-
-        if (values.length == 5) {
-            try {
-                float T1 = Float.parseFloat(values[0]);
-                float T2 = Float.parseFloat(values[1]);
-                float T3 = Float.parseFloat(values[2]);
-                float Voltage = Float.parseFloat(values[3]);
-                float Current = Float.parseFloat(values[4]);
-
-                addResultToQueue(T1, T2, T3, Voltage, Current);
-
-                runOnUiThread(() -> updateUI(T1, T2, T3, Voltage, Current));
-            } catch (NumberFormatException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    /**
-     * Dodaje wynik do kolejki, utrzymując maksymalnie 5 najnowszych wyników
-     */
-    private void addResultToQueue(float T1, float T2, float T3, float Voltage, float Current) {
-        String result = String.format("T1: %.2f, T2: %.2f, T3: %.2f, V: %.2f V, C: %.2f A",
+    private void addResultToVector(float T1, float T2, float T3, float Voltage, float Current) {
+        String result = String.format("T1: %.2f°C, T2: %.2f°C, T3: %.2f°C, V: %.2f V, C: %.2f A",
                 T1, T2, T3, Voltage, Current);
 
         if (recentResults.size() == 5) {
-            recentResults.poll(); // Usuń najstarszy wynik
+            recentResults.remove(0); // Usuń najstarszy wynik
         }
 
-        recentResults.add(result);
-    }
-
-    /**
-     * Aktualizuje interfejs użytkownika z otrzymanymi danymi
-     */
-    private void updateUI(float T1, float T2, float T3, float Voltage, float Current) {
-        tachometer1.speedTo(T1);
-        tachometer2.speedTo(T2);
-        tachometer3.speedTo(T3);
-        tachometer4.speedTo(Voltage);
-        tachometer5.speedTo(Current);
-
-        tvT1.setText(String.format("T1: %.2f°C", T1));
-        tvT2.setText(String.format("T2: %.2f°C", T2));
-        tvT3.setText(String.format("T3: %.2f°C", T3));
-        tvVoltage.setText(String.format("Voltage: %.2f V", Voltage));
-        tvCurrent.setText(String.format("Current: %.2f A", Current));
+        recentResults.add(result); // Dodaj nowy wynik
     }
 
     /**
@@ -244,16 +240,24 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        if (isSaved) {
+            showToast("Dane zostały już zapisane");
+            return;
+        }
+
         File file = new File(getExternalFilesDir(null), "results.txt");
 
-        try (FileWriter writer = new FileWriter(file, false)) { // false nadpisuje plik
+        try (FileWriter writer = new FileWriter(file, true)) { // true oznacza dopisywanie do pliku
             for (String result : recentResults) {
                 writer.write(result + "\n");
             }
-            showToast("Wyniki zapisane do: " + file.getAbsolutePath());
+            Toast.makeText(this, "Wyniki zapisane do: " + file.getAbsolutePath(), Toast.LENGTH_LONG).show();
+            isSaved = true;
+            btnSave.setEnabled(false); // Wyłącz przycisk zapisu po zapisaniu
+            Log.d(TAG, "Dane zostały zapisane do pliku");
         } catch (IOException e) {
-            e.printStackTrace();
-            showToast("Błąd podczas zapisu");
+            Log.e(TAG, "Błąd podczas zapisu do pliku", e);
+            Toast.makeText(this, "Błąd podczas zapisu", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -274,27 +278,41 @@ public class MainActivity extends AppCompatActivity {
             while (scanner.hasNextLine()) {
                 fileContents.append(scanner.nextLine()).append("\n");
             }
+            scanner.close();
 
+            // Wyświetl dane w TextView
             tvFileContents.setText(fileContents.toString());
+            Log.d(TAG, "Zawartość pliku została wyświetlona");
         } catch (IOException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Błąd podczas odczytu pliku", e);
             showToast("Błąd podczas odczytu pliku");
         }
     }
 
     /**
-     * Resetuje zawartość pliku
+     * Resetuje zawartość pliku oraz wektora wyników
      */
     private void resetFile() {
         File file = new File(getExternalFilesDir(null), "results.txt");
 
         try (FileWriter writer = new FileWriter(file, false)) { // false nadpisuje plik
             writer.write(""); // Zapisuje pustą zawartość
-            showToast("Plik został zresetowany");
+            Toast.makeText(this, "Plik został zresetowany", Toast.LENGTH_SHORT).show();
+
+            // Aktualizuj TextView po zresetowaniu
             tvFileContents.setText("Zawartość pliku została zresetowana.");
+
+            // Czyść wektor wyników
+            recentResults.clear();
+
+            // Resetuj flagę zapisu i wyłącz przycisk zapisu
+            isSaved = false;
+            btnSave.setEnabled(false);
+
+            Log.d(TAG, "Plik i wektor wyników zostały zresetowane");
         } catch (IOException e) {
-            e.printStackTrace();
-            showToast("Błąd podczas resetowania pliku");
+            Log.e(TAG, "Błąd podczas resetowania pliku", e);
+            Toast.makeText(this, "Błąd podczas resetowania pliku", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -320,9 +338,10 @@ public class MainActivity extends AppCompatActivity {
         try {
             if (bluetoothSocket != null) {
                 bluetoothSocket.close();
+                Log.d(TAG, "Połączenie Bluetooth zostało zamknięte");
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Błąd podczas zamykania połączenia Bluetooth", e);
         }
     }
 }
