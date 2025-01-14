@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="receivedDataTextView" type="id" />
+    <item name="sendDataEditText" type="id" />
+    <item name="sendButton" type="id" />
+    <item name="connectButton" type="id" />
+</resources>
