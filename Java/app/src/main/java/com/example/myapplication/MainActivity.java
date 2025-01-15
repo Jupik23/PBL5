@@ -197,7 +197,7 @@ public class MainActivity extends AppCompatActivity {
                                 tvVoltage.setText(String.format("Voltage: %.2f V", Voltage));
                                 tvCurrent.setText(String.format("Current: %.2f A", Current));
 
-                                // Reset the save flag since new data has arrived
+                                // Resetowanie flagi zapisu po otrzymaniu nowych danych
                                 isSaved = false;
                                 btnSave.setEnabled(true);
                             });
@@ -255,6 +255,10 @@ public class MainActivity extends AppCompatActivity {
             isSaved = true;
             btnSave.setEnabled(false); // Wyłącz przycisk zapisu po zapisaniu
             Log.d(TAG, "Dane zostały zapisane do pliku");
+
+            // Czyszczenie wektora po zapisaniu danych
+            recentResults.clear();
+            Log.d(TAG, "Wektor recentResults został wyczyszczony po zapisie");
         } catch (IOException e) {
             Log.e(TAG, "Błąd podczas zapisu do pliku", e);
             Toast.makeText(this, "Błąd podczas zapisu", Toast.LENGTH_SHORT).show();
