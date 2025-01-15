@@ -15,13 +15,16 @@
 <h3>Steps</h3>
 <ol>Clone Repo</ol>
 <li>git clone https://github.com/jupik23/PBL5.git</li>
+
 <ol>Open in Android Studio</ol>
 <li>Click on Open an existing Android Studio project.</li>
 <li>Navigate to the cloned repository folder and select it.</li>
 <ol>Build the Project</ol>
+
 <li>Ensure all dependencies are resolved.</li>
 <li>Click on Build > Make Project or press Ctrl+F9.</li>
 <ol>Run the App</ol>
+
 <li>Connect your Android device via USB or set up an emulator.</li>
 <li>Click on Run > Run 'app' or press the Run button.</li>
 
