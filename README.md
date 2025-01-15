@@ -8,6 +8,7 @@
 <li>Data Management: View saved data logs and reset logs to clear old entries.</li>
 <li>User-Friendly Interface: Intuitive and responsive UI for seamless interaction.</li></p>
 <h1>Installation</h1>
+<h3>Prerequisites</h3>
 <li>Android Studio</li>
 <li>Android Device or Emulator</li>
 <li>ESP32</li>
